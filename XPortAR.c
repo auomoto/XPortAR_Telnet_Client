@@ -7,14 +7,13 @@
 #include <string.h>
 #include <unistd.h>
 
-#define XPORTIP	"192.168.1.99"		// Address on home network
+#define XPORTIP		"192.168.1.99"	// Address on home network
 #define TELNETPORT	23
 #define BUFSIZE		512
+#define MINPOS		55		// Rotation range limits for my servo motor
+#define MAXPOS		243		// Values are 100X pulse width in msec
 
-#define MINPOS		55		// Special numbers for my servo motor
-#define MAXPOS		243		// 100X ms of pulse width
-
-int initXPort(int);
+int initXPort(int);			// Function prototypes
 void moveTo(int, int);
 int readXPort(int, char*, char);
 int telnetToXPort(char *);
@@ -34,43 +33,92 @@ char *argc[];
 		strcpy(ipaddress, XPORTIP);
 	}
 
-
 	XPortSock = telnetToXPort(ipaddress);
-	if (XPortSock < 0) {
+
+	if (XPortSock < 0) {			// Couldn't connect to XPortAR
 		fprintf(stderr, "main(): telnetToXPort() error, exiting\n");
 		fflush(stderr);
 		exit(0);
 	}
 
-	if (initXPort(XPortSock) < 0) {
+	if (initXPort(XPortSock) < 0) {		// Couldn't set up for telnet
 		fprintf(stderr, "main(): initXPort() error, exiting\n");
 		fflush(stderr);
 		exit(0);
 	}
 
-	for (i = 0; i < 200; i++) {
-		position = (rand() % (243-55)) + 55;
+	moveTo(XPortSock, 55);			// Opening flourish
+	usleep(750000);
+	moveTo(XPortSock, 243);
+	usleep(750000);
+	moveTo(XPortSock, 55);
+	usleep(750000);
+	moveTo(XPortSock, 243);
+	usleep(750000);
+	moveTo(XPortSock, 150);
+	usleep(2000000);
+
+	srand(time(NULL));
+	for (i = 0; i < 100; i++) {		// Move motor randomly
+		position = (rand() % (244-55)) + 55;
 		printf("%3d ", i);
 		moveTo(XPortSock, position);
 		usleep(750000);
 	}
 
+	moveTo(XPortSock, 55);			// Closing
+	usleep(750000);
+	moveTo(XPortSock, 243);
+	usleep(750000);
+	moveTo(XPortSock, 55);
+	usleep(750000);
+	moveTo(XPortSock, 243);
+	usleep(750000);
+	moveTo(XPortSock, 150);
+	usleep(2000000);
+
 	exit(0);
 
 }
 
+/*---------------------------------------------------------------------------
+
+	Sends a command (an ascii number string between 55 and 243) to the
+	ATtiny servo board (see the github repository for ATtiny4313_Servo).
+	That servo motor has a range of pulse widths from 0.55 ms to 2.43 ms
+	and the number sent to the ATtiny4313 is 100X the pulse width in ms.
+
+---------------------------------------------------------------------------*/
 void moveTo(fd, value)
 int fd, value;
 {
 
 	char buf[BUFSIZE];
 
-	sprintf(buf, "%d\r", value);
-	writeXPort(fd, buf);
-	readXPort(fd, buf, '>');
+	if (value < MINPOS) value = MINPOS;
+	if (value > MAXPOS) value = MAXPOS;
+	sprintf(buf, "%d\r", value);		// ATtiny4313_Servo program wants
+	writeXPort(fd, buf);			// a number followed by a '\r'.
+	readXPort(fd, buf, '>');		// Clear the ATtiny reply
 
 }
 
+/*---------------------------------------------------------------------------
+
+	Sends commands to the XPort AR to connect to serial line 1 by telnet.
+	After the initial connection and receipt of the '>' prompt), the
+	XPort AR wants two commands: "enable" and "connect line 1":
+
+		>enable
+		(enable)#connect line 1
+
+	The connect command reply is the typical telnet notice stating that
+	<control>L is the escape character.
+
+	The initial connection returns a stream of about 11 bytes before
+	sending the '>' prompt character.
+
+---------------------------------------------------------------------------*/
 int initXPort(fd)
 int fd;
 {
@@ -78,8 +126,8 @@ int fd;
 	char buf[BUFSIZE];
 	int n;
 
-	// Initial connection eventually returns a '>' after a bunch of junk
-	n = readXPort(fd, buf, '>');
+	n = readXPort(fd, buf, '>');		// Initial connection returns a '>'
+
 	if (n < 0) {
 		fprintf(stderr, "initXPort(): error on initial connect (no '>')\n");
 		fflush(stderr);
@@ -89,10 +137,10 @@ int fd;
 		fflush(stdout);
 	}
 
-	// Write the XPortAR "enable" command
-	memset(buf, 0, BUFSIZE);
+	memset(buf, 0, BUFSIZE);		// Send the "enable" command
 	strcpy(buf, "enable\r");
 	n = writeXPort(fd, buf);
+
 	if (n < 0) {
 		fprintf(stderr, "initXPort(): error writing \"enable\" command\n");
 		fflush(stderr);
@@ -102,8 +150,7 @@ int fd;
 		fflush(stdout);
 	}
 
-	// The XPortAR "enable" command returns the string "(enable)#"
-	n = readXPort(fd, buf, '#');
+	n = readXPort(fd, buf, '#');		// "(enable)#" is received
 	if (n < 0) {
 		fprintf(stderr, "initXPort(): error reading \"(enable)#\" command\n");
 		fflush(stderr);
@@ -113,9 +160,9 @@ int fd;
 		fflush(stdout);
 	}
 
-	// Send the "connect line 1" command
-	memset(buf, 0, BUFSIZE);
+	memset(buf, 0, BUFSIZE);		// send the "connect line 1" command
 	strcpy(buf, "connect line 1\r");
+
 	n = writeXPort(fd, buf);
 	if (n < 0) {
 		fprintf(stderr, "initXPort(): error writing \"connect line 1\" command\n");
@@ -126,8 +173,7 @@ int fd;
 		fflush(stdout);
 	}
 
-	// Read the telnet message about ^L escape
-	n = readXPort(fd, buf, '\n');
+	n = readXPort(fd, buf, '\n');		// Receive telnet message
 	if (n < 0) {
 		fprintf(stderr, "initXPort(): error reading \"<control>L response\"\n");
 		fflush(stderr);
@@ -137,8 +183,8 @@ int fd;
 		fflush(stdout);
 	}
 
-/*
-	// Loopback test (Rx and Tx must be connected on the chip/board)
+/*///////////////////////////////////////////////////////////////////////////////
+	// Loopback test (Rx and Tx are connected on the chip/board)
 	memset(buf, 0, BUFSIZE);
 	strcpy(buf, "echotest\r");
 	n = writeXPort(fd, buf);
@@ -160,13 +206,22 @@ int fd;
 		printf("initXPort(): read %d bytes: %s\n", n, buf);
 		fflush(stdout);
 	}
-*/
+///////////////////////////////////////////////////////////////////////////////*/
 
 	return(0);
 
 }
 
 
+/*---------------------------------------------------------------------------
+
+	Read the serial data through the XPort AR telnet connection until the
+	endchar is seen.
+
+	The XPort AR socket is non-blocking. Loop on a read until the expected
+	ending character in the stream is detected or the loop count is exceeded.
+
+---------------------------------------------------------------------------*/
 int readXPort(fd, buf, endchar)
 int fd;
 char *buf, endchar;
@@ -181,18 +236,20 @@ char *buf, endchar;
 
 	ncount = 0;
 	while (strrchr(buf, endchar) == NULL) {
+
 		ncount++;
 		if (ncount > 500) {
 			fprintf(stderr, "readXPort(): timeout\n");
 			fflush(stderr);
 			return(-1);
 		}
+
 		memset(tbuf, 0, BUFSIZE);
 		nread = read(fd, tbuf, BUFSIZE);
 		if (nread > 0) {
 			strcat(buf, tbuf);
 		} else if ((nread < 0) && (errno != EAGAIN) && (errno != EWOULDBLOCK)) {
-			fprintf(stderr, "readXPort(): read() error\n");
+			fprintf(stderr, "readXPort(): read() error: %s\n", strerror(errno));
 			fflush(stderr);
 			return(-1);
 		} else {
@@ -203,6 +260,11 @@ char *buf, endchar;
 
 }
 
+/*---------------------------------------------------------------------------
+
+	Opens a non-blocking socket to the XPort AR.
+
+---------------------------------------------------------------------------*/
 int telnetToXPort(ipaddress)
 char *ipaddress;
 {
@@ -218,19 +280,19 @@ char *ipaddress;
 	XPortSockAddr.sin_port = htons(TELNETPORT);
 
 	if (inet_pton(AF_INET, ipaddress, &(XPortSockAddr.sin_addr)) <= 0) {
-		fprintf(stderr, "telnetToXport(): inet_pton() error: %s\n", strerror(errno));
+		fprintf(stderr, "telnetToXPort(): inet_pton() error: %s\n", strerror(errno));
 		fflush(stderr);
 		return(-1);
 	}
 
 	if ((XPortSock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-		fprintf(stderr, "telnetToXport(): socket() error: %s\n", strerror(errno));
+		fprintf(stderr, "telnetToXPort(): socket() error: %s\n", strerror(errno));
 		fflush(stderr);
 		return(-2);
 	}
 
 	if (connect(XPortSock, (struct sockaddr *) &XPortSockAddr, sizeof(XPortSockAddr))) {
-		fprintf(stderr, "telnetToXport(): connect() error: %s\n", strerror(errno));
+		fprintf(stderr, "telnetToXPort(): connect() error: %s\n", strerror(errno));
 		fflush(stderr);
 		return(-3);
 	}
@@ -242,6 +304,11 @@ char *ipaddress;
 
 }
 
+/*---------------------------------------------------------------------------
+
+	Writes to the serial port.
+
+---------------------------------------------------------------------------*/
 int writeXPort(fd, buf)
 int fd;
 char *buf;
