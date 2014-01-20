@@ -1,9 +1,9 @@
 XPort AR Telnet Client
-=====================
+======================
 
-This program connects by telnet to a Lantronix XPort AR Ethernet embedded network processor module and communicates with its "Line 1" serial port. The purpose is to learn how to command serial devices over the network using the XPort AR.
+This program makes a telnet connection to a Lantronix XPort AR Ethernet embedded network processor module and communicates with its "Line 1" serial port. The purpose is to learn how to command serial devices over the network using the XPort AR.
 
-This particular example talks to the ATtiny4313_Servo board (see the github entry). It turns the hobby servo to random positions 200 times before exiting.
+This particular example talks to my ATtiny4313_Servo board (see the github entry). It moves the servo motor to random positions before exiting.
 
 This program compiles under gcc in the Windows 8.1 Cygwin environment and runs in a Windows 8.1 Cygwin terminal window.
 
